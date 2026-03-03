@@ -1,6 +1,7 @@
 import streamlit as st
 from duckduckgo_search import DDGS
-import google.generativeai as genai
+import requests
+import json
 import datetime
 
 # ================= 配置区 =================
@@ -9,8 +10,6 @@ try:
 except:
     st.error("请先在 Streamlit 后台设置 Secrets 里的 GENAI_API_KEY")
     st.stop()
-
-genai.configure(api_key=GENAI_API_KEY)
 
 # ================= 核心功能函数 =================
 
@@ -37,55 +36,66 @@ def get_news_links():
     return "\n".join(news_data)
 
 @st.cache_data(ttl=3600, show_spinner=False) 
-def generate_news_report(_news_text):
+def generate_news_report_direct(_news_text):
+    """直接通过 HTTP 请求调用 Gemini API，绕过 SDK 版本问题"""
     if not _news_text or len(_news_text) < 10: return "未找到足够的新闻数据。"
     
-    # 🔥 核心修改：使用 gemini-1.5-flash
-    # 因为我们在 requirements.txt 里强制升级了工具包，这个模型现在一定能用了！
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 使用 gemini-1.5-flash 的直接 API 地址
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GENAI_API_KEY}"
     
-    prompt = f"""
+    headers = {'Content-Type': 'application/json'}
+    
+    prompt_text = f"""
     请根据以下新闻原数据，整理一份中文简报。
-    
     【新闻数据】：
     {_news_text}
-
     【要求】：
     1. 美国与特朗普 (3-5条)。
     2. 欧洲重点 (2-3条)。
     3. 全球要闻 (2-3条)。
-    
     【格式】：
     * 标题加粗，后接核心摘要。
     * 使用简体中文。
     * 不要开场白。
     """
     
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt_text}]
+        }]
+    }
+    
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        
+        if response.status_code == 200:
+            result = response.json()
+            # 解析返回的 JSON 结构
+            try:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            except:
+                return "生成成功但解析失败，原始内容：" + str(result)
+        else:
+            return f"API 调用失败 (代码 {response.status_code}): {response.text}"
+            
     except Exception as e:
-        return f"生成失败: {e}"
+        return f"网络请求出错: {e}"
 
 # ================= 网页界面 =================
 
 st.set_page_config(page_title="全球热点", page_icon="🗞️")
-st.title("🌍 每日全球舆情 (Flash版)")
+st.title("🌍 每日全球舆情 (直连版)")
 st.caption(f"更新时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 if st.button("🚀 获取简报", type="primary", use_container_width=True):
-    try:
-        with st.status("正在运行...", expanded=True) as status:
-            st.write("🔍 正在抓取新闻...")
-            raw_news = get_news_links()
-            
-            st.write("🤖 正在生成摘要 (使用 Gemini 1.5 Flash)...")
-            summary = generate_news_report(raw_news)
-            
-            status.update(label="✅ 完成", state="complete", expanded=False)
+    with st.status("正在运行...", expanded=True) as status:
+        st.write("🔍 正在抓取新闻...")
+        raw_news = get_news_links()
         
-        st.markdown("---")
-        st.markdown(summary)
+        st.write("🤖 正在生成摘要 (API 直连)...")
+        summary = generate_news_report_direct(raw_news)
         
-    except Exception as e:
-        st.error(f"出错: {e}")
+        status.update(label="✅ 完成", state="complete", expanded=False)
+    
+    st.markdown("---")
+    st.markdown(summary)
