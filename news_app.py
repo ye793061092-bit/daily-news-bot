@@ -5,7 +5,7 @@ import datetime
 
 # ================= 配置区 =================
 # 填入您的 Gemini API Key (免费申请: https://aistudio.google.com/)
-GENAI_API_KEY = "这里填入您的_GEMINI_API_KEY" 
+GENAI_API_KEY = "AIzaSyDs9dEAOMLOdob-aAK02ozJou8-F_rCw-8" 
 genai.configure(api_key=GENAI_API_KEY)
 
 # ================= 核心功能函数 =================
@@ -82,4 +82,5 @@ if st.button("🚀 一键获取最新简报", type="primary", use_container_widt
         st.error(f"发生错误，请检查网络或 API Key：\n{e}")
 
 else:
+
     st.info("👋 你好！点击上方按钮，AI 将为您实时抓取并总结全球新闻。")
