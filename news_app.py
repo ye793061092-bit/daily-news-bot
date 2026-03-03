@@ -4,8 +4,13 @@ import google.generativeai as genai
 import datetime
 
 # ================= 配置区 =================
-# 填入您的 Gemini API Key (免费申请: https://aistudio.google.com/)
-GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
+# 从 Secrets 安全读取 Key
+try:
+    GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
+except:
+    st.error("请先在 Streamlit 后台设置 Secrets 里的 GENAI_API_KEY")
+    st.stop()
+
 genai.configure(api_key=GENAI_API_KEY)
 
 # ================= 核心功能函数 =================
@@ -15,32 +20,35 @@ def get_news_links():
     ddgs = DDGS()
     news_data = []
     
-    # 1. 搜索特朗普和美国 (Trump US News)
-    st.toast("正在搜索：美国与特朗普新闻...", icon="🇺🇸")
-    us_results = list(ddgs.news("Trump US politics", region="wt-wt", timelimit="d", max_results=10))
-    news_data.extend([f"[美国] {r['title']} - {r['body']}" for r in us_results])
+    # 搜索词优化，增加容错
+    try:
+        us_results = list(ddgs.news("Trump US politics", region="wt-wt", timelimit="d", max_results=5))
+        news_data.extend([f"[美国] {r['title']} - {r['body']}" for r in us_results])
 
-    # 2. 搜索欧洲 (Europe News)
-    st.toast("正在搜索：欧洲局势...", icon="🇪🇺")
-    eu_results = list(ddgs.news("Europe politics economy", region="wt-wt", timelimit="d", max_results=8))
-    news_data.extend([f"[欧洲] {r['title']} - {r['body']}" for r in eu_results])
+        eu_results = list(ddgs.news("Europe politics economy", region="wt-wt", timelimit="d", max_results=5))
+        news_data.extend([f"[欧洲] {r['title']} - {r['body']}" for r in eu_results])
 
-    # 3. 搜索全球其他 (World News)
-    st.toast("正在搜索：全球要闻...", icon="🌏")
-    world_results = list(ddgs.news("World breaking news", region="wt-wt", timelimit="d", max_results=8))
-    news_data.extend([f"[全球] {r['title']} - {r['body']}" for r in world_results])
+        world_results = list(ddgs.news("World breaking news", region="wt-wt", timelimit="d", max_results=5))
+        news_data.extend([f"[全球] {r['title']} - {r['body']}" for r in world_results])
+    except Exception as e:
+        return f"搜索新闻源时出现网络波动: {e}"
     
     return "\n".join(news_data)
 
-def summarize_with_ai(news_text):
-    """调用 Gemini 进行筛选、总结和翻译"""
-    model = genai.GenerativeModel('gemini-2.0-flash') # 使用最新的 Flash 模型，速度快
+# 🔥 重点修改：增加了 @st.cache_data 装饰器
+# ttl=3600 表示：这份简报生成后，1小时(3600秒)内如果再有人点，直接显示旧的，不消耗您的 API 额度！
+@st.cache_data(ttl=3600, show_spinner=False) 
+def generate_news_report(_news_text):
+    """调用 Gemini 进行总结"""
+    if not _news_text: return "未找到足够的新闻数据。"
+    
+    model = genai.GenerativeModel('gemini-2.0-flash')
     
     prompt = f"""
     你是一名专业的国际舆情分析师。请根据以下抓取到的英文新闻原数据，整理一份中文简报。
     
     【新闻原数据】：
-    {news_text}
+    {_news_text}
 
     【严格执行以下输出要求】：
     1. **美国与特朗普 (3-5条)**：必须包含特朗普的最新动态/言论。
@@ -54,8 +62,7 @@ def summarize_with_ai(news_text):
     * 不要任何开场白，直接输出 Markdown 格式的列表。
     """
     
-    with st.spinner('AI 正在阅读并撰写简报（约需 10 秒）...'):
-        response = model.generate_content(prompt)
+    response = model.generate_content(prompt)
     return response.text
 
 # ================= 网页界面 (UI) =================
@@ -63,25 +70,24 @@ def summarize_with_ai(news_text):
 st.set_page_config(page_title="全球热点速递", page_icon="🗞️")
 
 st.title("🌍 每日全球舆情 (AI版)")
-st.caption(f"更新时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.caption(f"当前时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 if st.button("🚀 一键获取最新简报", type="primary", use_container_width=True):
     try:
-        # 1. 获取原始数据
-        raw_news = get_news_links()
+        with st.status("正在通过 AI 联网分析...", expanded=True) as status:
+            st.write("🔍 正在抓取全球新闻源...")
+            raw_news = get_news_links()
+            
+            st.write("🤖 AI 正在阅读并撰写简报...")
+            summary = generate_news_report(raw_news)
+            
+            status.update(label="✅ 简报已生成", state="complete", expanded=False)
         
-        # 2. AI 处理
-        summary = summarize_with_ai(raw_news)
-        
-        # 3. 展示结果
         st.markdown("---")
         st.markdown(summary)
-        st.success("更新完毕！")
         
     except Exception as e:
-        st.error(f"发生错误，请检查网络或 API Key：\n{e}")
+        st.error(f"发生错误（可能是请求太快，请等1分钟再试）：\n{e}")
 
 else:
-
-    st.info("👋 你好！点击上方按钮，AI 将为您实时抓取并总结全球新闻。")
-
+    st.info("👋 点击上方按钮，AI 将为您总结全球新闻。(每小时自动更新一次)")
