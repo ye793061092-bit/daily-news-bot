@@ -36,14 +36,13 @@ def get_news_links():
     
     return "\n".join(news_data)
 
-# 缓存 1 小时，避免频繁请求
 @st.cache_data(ttl=3600, show_spinner=False) 
 def generate_news_report(_news_text):
     if not _news_text or len(_news_text) < 10: return "未找到足够的新闻数据。"
     
-    # 🔥 核心修改：强制使用 'gemini-pro'
-    # 这是 Google 最经典的通用模型，兼容所有旧版环境，绝不会报 404
-    model = genai.GenerativeModel('gemini-pro')
+    # 🔥 核心修改：使用 gemini-1.5-flash
+    # 因为我们在 requirements.txt 里强制升级了工具包，这个模型现在一定能用了！
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     请根据以下新闻原数据，整理一份中文简报。
@@ -71,7 +70,7 @@ def generate_news_report(_news_text):
 # ================= 网页界面 =================
 
 st.set_page_config(page_title="全球热点", page_icon="🗞️")
-st.title("🌍 每日全球舆情 (经典版)")
+st.title("🌍 每日全球舆情 (Flash版)")
 st.caption(f"更新时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 if st.button("🚀 获取简报", type="primary", use_container_width=True):
@@ -80,7 +79,7 @@ if st.button("🚀 获取简报", type="primary", use_container_width=True):
             st.write("🔍 正在抓取新闻...")
             raw_news = get_news_links()
             
-            st.write("🤖 正在生成摘要 (使用 Gemini Pro)...")
+            st.write("🤖 正在生成摘要 (使用 Gemini 1.5 Flash)...")
             summary = generate_news_report(raw_news)
             
             status.update(label="✅ 完成", state="complete", expanded=False)
