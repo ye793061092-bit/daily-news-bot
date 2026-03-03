@@ -5,70 +5,81 @@ import datetime
 # ================= 核心功能 =================
 
 def get_news_and_summarize():
-    """使用 DuckDuckGo 搜索并直接调用其 AI 进行总结"""
+    """双保险模式：优先AI总结，失败则显示原新闻"""
     ddgs = DDGS()
     
     # 1. 抓取新闻链接
-    news_items = []
-    status_text = ""
+    status_placeholder = st.empty()
+    status_placeholder.write("🔍 正在抓取全球新闻源...")
     
+    raw_context = ""
     try:
-        # 搜索策略：分板块搜索
         queries = [
-            ("美国与特朗普", "Trump US politics breaking news"),
-            ("欧洲局势", "Europe politics economy news"),
-            ("全球要闻", "World international breaking news")
+            ("🇺🇸 美国与特朗普", "Trump US politics breaking news"),
+            ("🇪🇺 欧洲局势", "Europe politics economy news"),
+            ("🌏 全球要闻", "World international breaking news")
         ]
         
-        raw_context = ""
         for category, query in queries:
-            results = list(ddgs.news(query, region="wt-wt", timelimit="d", max_results=4))
-            for r in results:
-                raw_context += f"[{category}] {r['title']}: {r['body']}\n"
-        
-        if not raw_context:
-            return "⚠️ 未搜索到有效新闻，请稍后重试。"
+            # 搜索新闻
+            results = list(ddgs.news(query, region="wt-wt", timelimit="d", max_results=3))
+            if results:
+                raw_context += f"### {category}\n"
+                for r in results:
+                    # 记录原始数据备用
+                    raw_context += f"* [{r['title']}]({r['url']})\n"
+                    # 这里的 body 用于给 AI 读
+                    raw_context += f"  > 摘要: {r['body']}\n\n"
+    
+    except Exception as e:
+        return f"⚠️ 网络抓取失败: {e}"
 
-        # 2. 直接使用 DuckDuckGo 的 AI (GPT-4o mini) 进行总结
-        # 这一步不需要 Key，完全免费
+    if not raw_context:
+        return "⚠️ 未搜索到有效新闻，请稍后重试。"
+
+    # 2. 尝试调用 AI
+    status_placeholder.write("🤖 正在调用 GPT-4o mini 进行分析...")
+    
+    try:
+        # 使用 DuckDuckGo 的 AI (免费模型)
         prompt = f"""
-        请扮演专业的中文舆情分析师。基于以下抓取到的英文新闻摘要，写一份简报。
+        你是一名中文新闻编辑。请将以下抓取到的英文新闻资讯，整理成一份简报。
         
         【原始数据】：
         {raw_context}
 
         【输出要求】：
-        1. **美国与特朗普 (3-5条)**：关注特朗普最新动态。
-        2. **欧洲重点 (2-3条)**。
-        3. **全球要闻 (2-3条)**。
-        
-        【格式】：
-        * 使用Markdown列表。
-        * 标题加粗，后接一句话摘要（中文）。
-        * 只要干货，不要开场白。
+        1. 分为“美国/特朗普”、“欧洲”、“全球”三个板块。
+        2. 标题加粗，下面跟一句中文简要说明。
+        3. 只要干货，不要开场白。
         """
         
-        # 调用 chat 接口 (model='gpt-4o-mini')
+        # 这一步需要 duckduckgo-search>=6.3.0 版本
         response = ddgs.chat(prompt, model='gpt-4o-mini')
+        status_placeholder.empty() # 清除状态文字
         return response
-
+        
     except Exception as e:
-        return f"运行出错: {e}"
+        # 🔥【双保险机制】如果 AI 失败了，直接展示刚才抓到的原始新闻
+        status_placeholder.empty()
+        return f"""
+        **⚠️ AI 暂时繁忙（无免费额度），已为您切换到【直读模式】：**
+        
+        ---
+        {raw_context}
+        
+        *(错误信息: {e})*
+        """
 
 # ================= 网页界面 =================
 
-st.set_page_config(page_title="全球热点(免Key版)", page_icon="🌍")
-st.title("🌍 每日全球舆情 (无锁直连)")
+st.set_page_config(page_title="全球热点", page_icon="🌍")
+st.title("🌍 每日全球舆情 (无锁版)")
 st.caption(f"更新时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
 if st.button("🚀 获取简报", type="primary", use_container_width=True):
-    with st.status("正在通过美国节点连接...", expanded=True) as status:
-        st.write("🔍 正在抓取全球新闻源...")
-        st.write("🤖 正在调用 GPT-4o mini 进行分析...")
-        
+    with st.spinner('正在连接美国节点...'):
         summary = get_news_and_summarize()
         
-        status.update(label="✅ 完成", state="complete", expanded=False)
-    
     st.markdown("---")
     st.markdown(summary)
