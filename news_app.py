@@ -42,7 +42,7 @@ def generate_news_report(_news_text):
     """调用 Gemini 进行总结"""
     if not _news_text: return "未找到足够的新闻数据。"
     
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     你是一名专业的国际舆情分析师。请根据以下抓取到的英文新闻原数据，整理一份中文简报。
@@ -91,3 +91,4 @@ if st.button("🚀 一键获取最新简报", type="primary", use_container_widt
 
 else:
     st.info("👋 点击上方按钮，AI 将为您总结全球新闻。(每小时自动更新一次)")
+
